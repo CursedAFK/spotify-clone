@@ -4,6 +4,9 @@ import { Container, Form } from 'react-bootstrap'
 import useAuth from '../(hooks)/useAuth'
 import { useState, useEffect } from 'react'
 import SpotifyWebApi from 'spotify-web-api-node'
+import TrackSearchResult from './TrackSearchResult'
+import Player from './Player'
+import axios from 'axios'
 
 const spotifyApi = new SpotifyWebApi({
   clientId: 'a23bd0da8a7e41129d9aa88aa9d8a08f'
@@ -12,10 +15,31 @@ const spotifyApi = new SpotifyWebApi({
 export default function Dashboard({ code }) {
   const [search, setSearch] = useState('')
   const [searchResults, setSearchResults] = useState([])
+  const [playingTrack, setPlayingTrack] = useState()
+  const [lyrics, setLyrics] = useState('')
 
   const accessToken = useAuth(code)
 
-  console.log(searchResults)
+  function chooseTrack(track) {
+    setPlayingTrack(track)
+    setSearch('')
+    setLyrics('')
+  }
+
+  useEffect(() => {
+    if (!playingTrack) return
+
+    axios
+      .get('http://localhost:3500/lyrics', {
+        params: {
+          track: playingTrack.title,
+          artist: playingTrack.artist
+        }
+      })
+      .then(res => {
+        setLyrics(res.data.lyrics)
+      })
+  }, [playingTrack])
 
   useEffect(() => {
     if (!accessToken) return
@@ -26,7 +50,10 @@ export default function Dashboard({ code }) {
     if (!search) return setSearchResults([])
     if (!accessToken) return
 
+    let cancel = false
+
     spotifyApi.searchTracks(search).then(response => {
+      if (cancel) return
       setSearchResults(
         response.body.tracks.items.map(track => {
           const smallestAlbumImage = track.album.images.reduce(
@@ -37,7 +64,7 @@ export default function Dashboard({ code }) {
           )
 
           return {
-            artist: track.artist[0].name,
+            artist: track.artists[0].name,
             title: track.name,
             uri: track.uri,
             albumUrl: smallestAlbumImage.url
@@ -45,6 +72,10 @@ export default function Dashboard({ code }) {
         })
       )
     })
+
+    return () => {
+      cancel = true
+    }
   }, [search, accessToken])
 
   return (
@@ -56,9 +87,22 @@ export default function Dashboard({ code }) {
         onChange={e => setSearch(e.target.value)}
       />
       <div className='flex-grow-1 my-2' style={{ overflowY: 'auto' }}>
-        Songs
+        {searchResults.map(track => (
+          <TrackSearchResult
+            track={track}
+            key={track.uri}
+            chooseTrack={chooseTrack}
+          />
+        ))}
+        {searchResults.length === 0 && (
+          <div className='text-center' style={{ whiteSpace: 'pre' }}>
+            {lyrics}
+          </div>
+        )}
       </div>
-      <div>Bottom</div>
+      <div>
+        <Player accessToken={accessToken} trackUri={playingTrack?.uri} />
+      </div>
     </Container>
   )
 }
